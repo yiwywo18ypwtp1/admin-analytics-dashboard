@@ -1,5 +1,7 @@
+import { revalidateTag } from "next/cache";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { ANALYTICS_CACHE_TAG } from "@/features/analytics/data";
 import { deleteUser, getUser, updateUser } from "@/features/users/data";
 import { EMAIL_TAKEN_MESSAGE, parseUserId, userUpdateSchema } from "@/features/users/schemas";
 import type { User } from "@/features/users/types";
@@ -45,6 +47,10 @@ export async function DELETE(_request: NextRequest, ctx: RouteContext<"/api/user
 
   const result = await deleteUser(id);
   if (!result.ok) return userNotFound();
+
+  // The user's transactions were deleted too, so cached analytics are outdated.
+  // updateTag only works in Server Actions; Route Handlers use revalidateTag.
+  revalidateTag(ANALYTICS_CACHE_TAG, "max");
 
   return new Response(null, { status: 204 });
 }

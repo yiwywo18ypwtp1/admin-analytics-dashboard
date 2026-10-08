@@ -1,7 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { z } from "zod";
+import { ANALYTICS_CACHE_TAG } from "@/features/analytics/data";
 import { createUser, deleteUser, updateUser } from "./data";
 import { EMAIL_TAKEN_MESSAGE, type UserInput, userInputSchema } from "./schemas";
 
@@ -82,6 +83,10 @@ export async function deleteUserAction(id: number): Promise<DeleteUserResult> {
     // NOT_FOUND (already deleted, e.g. in another tab) also counts as success:
     // the user is gone either way, which is what was asked for.
     await deleteUser(id);
+    // Deleting a user also deletes their transactions (ON DELETE CASCADE), so the
+    // cached revenue numbers are wrong now. updateTag drops them immediately
+    // instead of waiting up to a minute. Create/update don't touch analytics.
+    updateTag(ANALYTICS_CACHE_TAG);
     revalidateDashboard();
     return { ok: true };
   } catch (error) {
