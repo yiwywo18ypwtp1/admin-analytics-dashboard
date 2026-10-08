@@ -10,6 +10,11 @@ type AvatarProps = {
   className?: string;
 };
 
+function isOptimizedHost(src: string): boolean {
+  // URL.canParse instead of new URL(): a malformed URL must not crash the render.
+  return URL.canParse(src) && OPTIMIZED_IMAGE_HOSTS.includes(new URL(src).hostname);
+}
+
 // No hooks, so it works in both Server and Client Components (users table is a Client Component).
 export function Avatar({ name, src, size = 32, className }: AvatarProps) {
   const style = { width: size, height: size };
@@ -39,7 +44,7 @@ export function Avatar({ name, src, size = 32, className }: AvatarProps) {
       height={size}
       // next/image only optimizes hosts listed in next.config.ts. A user can save any
       // https URL as an avatar, so unknown hosts are loaded as-is instead of failing.
-      unoptimized={!OPTIMIZED_IMAGE_HOSTS.includes(new URL(src).hostname)}
+      unoptimized={!isOptimizedHost(src)}
       style={style}
       className={cn("shrink-0 rounded-full bg-zinc-200 object-cover", className)}
     />

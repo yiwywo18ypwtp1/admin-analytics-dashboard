@@ -6,7 +6,7 @@ import { buttonStyles } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { UsersList } from "@/features/users/components/users-list";
-import { UsersTableSkeleton } from "@/features/users/components/users-table";
+import { UsersTableSkeleton } from "@/features/users/components/users-table-skeleton";
 import { UsersToolbar } from "@/features/users/components/users-toolbar";
 import { parseUsersQuery } from "@/features/users/schemas";
 

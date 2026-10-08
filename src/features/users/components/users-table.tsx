@@ -1,10 +1,15 @@
-import { ArrowDown, ArrowUp, ArrowUpDown, Pencil } from "lucide-react";
+"use client";
+
+import { ArrowDown, ArrowUp, ArrowUpDown, Pencil, Trash2, Users } from "lucide-react";
 import Link from "next/link";
+import { startTransition, useOptimistic } from "react";
+import { toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
-import { buttonStyles } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button, buttonStyles } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/cn";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { deleteUserAction } from "../actions";
 import type { UsersQuery, UsersSortField } from "../schemas";
 import type { User } from "../types";
 import { buildUsersHref } from "../users-url";
@@ -15,9 +20,35 @@ type UsersTableProps = {
   query: UsersQuery;
 };
 
-// Server Component for now: sorting is done with links, so the table needs no JS.
-// It becomes a Client Component in step 3.6, when optimistic delete needs useOptimistic.
+// Client Component because of optimistic delete: the row must disappear BEFORE the
+// server answers, so the list has to be state in the browser.
 export function UsersTable({ users, query }: UsersTableProps) {
+  // `users` (props from the server) is the source of truth. useOptimistic layers
+  // temporary changes on top of it that only live while a transition is running.
+  const [optimisticUsers, removeOptimistically] = useOptimistic(users, (current, deletedId: number) =>
+    current.filter((user) => user.id !== deletedId),
+  );
+
+  function handleDelete(user: User) {
+    if (!window.confirm(`Delete ${user.name}? This can't be undone.`)) return;
+
+    startTransition(async () => {
+      removeOptimistically(user.id); // 1. the row disappears immediately
+      const result = await deleteUserAction(user.id); // 2. the request runs
+      if (!result.ok) toast.error(result.message);
+      // 3. The transition ends here and React drops the optimistic layer:
+      //    - success: the action revalidated the page, the new `users` prop
+      //      no longer has this user, so nothing visibly changes;
+      //    - failure: `users` is unchanged, so the row comes back by itself.
+      //    No manual rollback code is needed.
+    });
+  }
+
+  if (optimisticUsers.length === 0) {
+    // Every row on this page was just deleted; fresh data is on its way.
+    return <EmptyState icon={Users} title="No users on this page" />;
+  }
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -44,7 +75,7 @@ export function UsersTable({ users, query }: UsersTableProps) {
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-100">
-          {users.map((user) => (
+          {optimisticUsers.map((user) => (
             // key = user.id, never the array index: after a delete or re-sort, an index
             // key would make React reuse the wrong row's DOM (e.g. a loaded image).
             <tr key={user.id} className="hover:bg-zinc-50">
@@ -60,7 +91,7 @@ export function UsersTable({ users, query }: UsersTableProps) {
               </td>
               <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{formatCurrency(user.revenueCents)}</td>
               <td className="whitespace-nowrap px-4 py-3 text-zinc-600">{formatDate(user.createdAt)}</td>
-              <td className="px-4 py-3 text-right">
+              <td className="whitespace-nowrap px-4 py-3 text-right">
                 <Link
                   href={`/dashboard/users/${user.id}/edit`}
                   aria-label={`Edit ${user.name}`}
@@ -68,6 +99,15 @@ export function UsersTable({ users, query }: UsersTableProps) {
                 >
                   <Pencil className="size-4" aria-hidden />
                 </Link>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`Delete ${user.name}`}
+                  onClick={() => handleDelete(user)}
+                  className="text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 className="size-4" aria-hidden />
+                </Button>
               </td>
             </tr>
           ))}
@@ -114,21 +154,5 @@ function SortableHeader({ field, query, align = "left", children }: SortableHead
         <Icon className={cn("size-3.5", !isSorted && "opacity-40")} aria-hidden />
       </Link>
     </th>
-  );
-}
-
-export function UsersTableSkeleton({ rows }: { rows: number }) {
-  return (
-    <div className="divide-y divide-zinc-100">
-      {Array.from({ length: rows }, (_, index) => (
-        <div key={index} className="flex items-center gap-4 px-4 py-3">
-          <Skeleton className="size-8 rounded-full" />
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="hidden h-4 flex-1 sm:block" />
-          <Skeleton className="h-4 w-16" />
-          <Skeleton className="h-4 w-20" />
-        </div>
-      ))}
-    </div>
   );
 }
