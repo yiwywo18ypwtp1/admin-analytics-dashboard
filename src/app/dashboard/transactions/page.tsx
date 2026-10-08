@@ -1,25 +1,24 @@
-import { ArrowLeftRight } from "lucide-react";
 import type { Metadata } from "next";
-import { Card } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
+import { Suspense } from "react";
 import { PageHeader } from "@/components/ui/page-header";
+import {
+  RecentTransactions,
+  RecentTransactionsSkeleton,
+} from "@/features/transactions/components/recent-transactions";
 
 export const metadata: Metadata = {
   title: "Transactions",
 };
 
-// Out of scope for the task: the sidebar link exists, the page is a placeholder.
+// The task only requires the sidebar item, so this page reuses the existing
+// "recent transactions" table instead of a full paginated list like Users.
 export default function TransactionsPage() {
   return (
     <>
-      <PageHeader title="Transactions" />
-      <Card>
-        <EmptyState
-          icon={ArrowLeftRight}
-          title="Coming soon"
-          description="Recent transactions are available on the Overview page and on each user's page."
-        />
-      </Card>
+      <PageHeader title="Transactions" description="The 50 most recent transactions across all users." />
+      <Suspense fallback={<RecentTransactionsSkeleton />}>
+        <RecentTransactions limit={50} />
+      </Suspense>
     </>
   );
 }

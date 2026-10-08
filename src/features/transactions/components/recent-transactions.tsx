@@ -11,12 +11,13 @@ type RecentTransactionsProps = {
   period?: Period;
   /** User page: this user's transactions. */
   userId?: number;
+  limit?: number;
 };
 
 // Async Server Component: fetches its own data, so the page can stream it
 // in a separate <Suspense> without waiting for it.
-export async function RecentTransactions({ period, userId }: RecentTransactionsProps) {
-  const transactions = await getRecentTransactions({ period, userId });
+export async function RecentTransactions({ period, userId, limit }: RecentTransactionsProps) {
+  const transactions = await getRecentTransactions({ period, userId, limit });
 
   return (
     <RecentTransactionsCard>
