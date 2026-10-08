@@ -46,10 +46,12 @@ export const transactions = sqliteTable(
   },
   (t) => [
     index("transactions_user_id_idx").on(t.userId),
-    index("transactions_created_at_idx").on(t.createdAt),
     // "Covering" index for dashboard analytics: every column those queries read is
     // in the index, so SQLite never touches the table rows (~6x faster on 500k rows).
-    index("transactions_analytics_idx").on(t.status, t.createdAt, t.amountCents, t.userId),
+    // created_at goes first on purpose: with status first, SQLite picked this index
+    // for "one user's payments" too and scanned every succeeded payment (300ms → 0.1ms).
+    // It also replaces a separate created_at index (same leading column).
+    index("transactions_analytics_idx").on(t.createdAt, t.status, t.amountCents, t.userId),
   ],
 );
 
