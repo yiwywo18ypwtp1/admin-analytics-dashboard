@@ -3,6 +3,7 @@
 import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { getPreviousPathname } from "@/lib/navigation";
 
 // Client Component: going back in history needs router.back().
 //
@@ -13,9 +14,10 @@ export function BackToUsersButton() {
   const router = useRouter();
 
   function handleClick() {
-    // Opened directly (new tab, bookmark): there's nothing to go back to inside
-    // the app, so open the users list instead of leaving the site.
-    if (window.history.length > 1) {
+    // Only go back when the previous page really is the users table. Otherwise
+    // (opened directly, came from another site or another dashboard page) open
+    // the table instead of sending the user somewhere unexpected.
+    if (getPreviousPathname() === "/dashboard/users") {
       router.back();
     } else {
       router.push("/dashboard/users");

@@ -9,6 +9,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button, buttonStyles } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { getPreviousPathname } from "@/lib/navigation";
 import type { UserFormState } from "../actions";
 import { USER_ROLES, USER_STATUSES, type User } from "../types";
 
@@ -29,8 +30,10 @@ export function UserForm({ action, user }: UserFormProps) {
   const [state, formAction, isPending] = useActionState(action, { status: "idle" });
 
   const errors = state.status === "error" ? state.fieldErrors : undefined;
-  // After a failed submit, show what the user typed; otherwise the saved values.
-  const values = state.status === "error" ? state.values : undefined;
+  // After a submit (failed or successful), show what the user typed; before any
+  // submit, the saved values. React resets the form after every action, so without
+  // this a successful "create" would flash an empty form before navigating away.
+  const values = state.status === "idle" ? undefined : state.values;
   const defaults = {
     name: values?.name ?? user?.name ?? "",
     email: values?.email ?? user?.email ?? "",
@@ -46,7 +49,18 @@ export function UserForm({ action, user }: UserFormProps) {
   useEffect(() => {
     if (state.status !== "success") return;
     toast.success(isEdit ? "User updated" : "User created");
-    router.push(`/dashboard/users/${state.userId}`);
+
+    // The form must not stay in history: otherwise "Back" on the next page would
+    // return to this form. Edit: go back to where the user came from (the user's
+    // page or the table), which shows fresh data thanks to revalidatePath.
+    // Create (or edit opened directly): REPLACE the form entry with the user's page.
+    const userPath = `/dashboard/users/${state.userId}`;
+    const previous = getPreviousPathname();
+    if (isEdit && (previous === userPath || previous === "/dashboard/users")) {
+      router.back();
+    } else {
+      router.replace(userPath);
+    }
   }, [state, isEdit, router]);
 
   return (

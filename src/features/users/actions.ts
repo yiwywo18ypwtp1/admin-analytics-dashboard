@@ -15,15 +15,16 @@ import { EMAIL_TAKEN_MESSAGE, type UserInput, userInputSchema } from "./schemas"
 
 type FieldErrors = Partial<Record<keyof UserInput, string[]>>;
 
+// `values` = what was submitted. React resets a form after its action runs, so
+// the form shows these again (after an error: no retyping; after success: no
+// flash of an empty form before the redirect).
 export type UserFormState =
   | { status: "idle" }
-  | { status: "success"; userId: number }
+  | { status: "success"; userId: number; values: Record<string, string> }
   | {
       status: "error";
       message?: string;
       fieldErrors?: FieldErrors;
-      // React resets a form after its action runs. Sending the submitted values
-      // back lets the form show them again instead of making the user retype.
       values: Record<string, string>;
     };
 
@@ -40,7 +41,7 @@ export async function createUserAction(_prev: UserFormState, formData: FormData)
     if (!result.ok) return { status: "error", fieldErrors: { email: [EMAIL_TAKEN_MESSAGE] }, values };
 
     revalidateDashboard();
-    return { status: "success", userId: result.data.id };
+    return { status: "success", userId: result.data.id, values };
   } catch (error) {
     console.error(error);
     return { status: "error", message: UNEXPECTED_ERROR, values };
@@ -66,7 +67,7 @@ export async function updateUserAction(
     }
 
     revalidateDashboard();
-    return { status: "success", userId: id };
+    return { status: "success", userId: id, values };
   } catch (error) {
     console.error(error);
     return { status: "error", message: UNEXPECTED_ERROR, values };
