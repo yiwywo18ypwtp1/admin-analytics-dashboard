@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { PAGE_SIZES, type UsersQuery } from "../schemas";
+import { PAGE_SIZES, SEARCH_MAX_LENGTH, type UsersQuery } from "../schemas";
 import { USER_STATUSES, type UserStatus } from "../types";
 import { buildUsersHref } from "../users-url";
 
@@ -100,6 +100,7 @@ function SearchInput({ query }: { query: UsersQuery }) {
         aria-label="Search users"
         placeholder="Search by name or email"
         value={value}
+        maxLength={SEARCH_MAX_LENGTH}
         onChange={(event) => setValue(event.target.value)}
         className="pl-9"
       />

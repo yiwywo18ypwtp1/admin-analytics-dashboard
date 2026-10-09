@@ -41,13 +41,19 @@ export type UserUpdate = z.infer<typeof userUpdateSchema>;
 // ---------------------------------------------------------------------------
 
 export const PAGE_SIZES = [10, 25, 50, 100] as const;
+export const SEARCH_MAX_LENGTH = 100;
 export const USERS_SORT_FIELDS = ["name", "email", "status", "revenue", "createdAt"] as const;
 export type UsersSortField = (typeof USERS_SORT_FIELDS)[number];
 
 export const usersQuerySchema = z.object({
   page: z.coerce.number().int().min(1).catch(1),
   limit: z.coerce.number().pipe(z.literal(PAGE_SIZES)).catch(25),
-  search: z.string().trim().max(100).catch(""),
+  // Too long → cut, not dropped: falling back to "" would mean "no filter", the
+  // opposite of what the user typed. Only a non-string (e.g. ?search=a&search=b) becomes "".
+  search: z
+    .string()
+    .catch("")
+    .transform((value) => value.trim().slice(0, SEARCH_MAX_LENGTH).trim()),
   status: z.enum(USER_STATUSES).optional().catch(undefined),
   sort: z.enum(USERS_SORT_FIELDS).catch("createdAt"),
   order: z.enum(["asc", "desc"]).catch("desc"),

@@ -1,23 +1,24 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, like, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, or, sql } from "drizzle-orm";
 import { SqliteError } from "better-sqlite3";
 import { connection } from "next/server";
 import { cache } from "react";
 import { db } from "@/db";
 import { activity, transactions, users } from "@/db/schema";
+import { escapeLike } from "@/lib/escape-like";
 import { simulateFailure, simulateLatency } from "@/lib/mock-api";
 import type { MutationResult, Paginated } from "@/lib/types";
 import type { UserInput, UsersQuery, UsersSortField, UserUpdate } from "./schemas";
 import type { ActivityEvent, User, UserStats } from "./types";
 
 // data.ts = DB access + rules that need the DB (unique email, activity log).
+// It receives already validated input; validation happens at the entry points
+// (Route Handlers, Server Actions) with the zod schemas from schemas.ts.
 //
 // Every read starts with `await connection()`. better-sqlite3 is synchronous, so
 // without it Next.js could run the query once at build time and serve that frozen
 // result forever. connection() means "only run this for a real request".
-// It receives already validated input; validation happens at the entry points
-// (Route Handlers, Server Actions) with the zod schemas from schemas.ts.
 
 // Maps public sort keys from the URL to real columns. Only these columns can
 // ever reach ORDER BY, so the URL can't inject arbitrary SQL.
@@ -33,25 +34,36 @@ export async function listUsers(query: UsersQuery): Promise<Paginated<User>> {
   await connection();
   await simulateLatency();
 
+  const pattern = `%${escapeLike(query.search)}%`;
   const where = and(
     query.search
-      ? or(like(users.name, `%${query.search}%`), like(users.email, `%${query.search}%`))
+      ? or(
+          // Drizzle's like() can't declare an escape character, so these two are raw SQL.
+          // ${...} values are still sent as bound parameters, not pasted into the SQL.
+          sql`${users.name} LIKE ${pattern} ESCAPE '\\'`,
+          sql`${users.email} LIKE ${pattern} ESCAPE '\\'`,
+        )
       : undefined,
     query.status ? eq(users.status, query.status) : undefined,
   );
   const direction = query.order === "asc" ? asc : desc;
 
-  const items = await db
-    .select()
-    .from(users)
-    .where(where)
-    // id as a tie-breaker: without it, rows with equal values (e.g. same status)
-    // can jump between pages.
-    .orderBy(direction(sortColumns[query.sort]), direction(users.id))
-    .limit(query.limit)
-    .offset((query.page - 1) * query.limit);
-
-  const [{ total }] = await db.select({ total: count() }).from(users).where(where);
+  // One transaction for both queries, so `items` and `total` see the same data:
+  // otherwise a delete between them could make "Showing 1–25 of N" disagree with the rows.
+  // better-sqlite3 transactions are synchronous, hence .all() / .get() instead of await.
+  const { items, total } = db.transaction((tx) => ({
+    items: tx
+      .select()
+      .from(users)
+      .where(where)
+      // id as a tie-breaker: without it, rows with equal values (e.g. same status)
+      // can jump between pages.
+      .orderBy(direction(sortColumns[query.sort]), direction(users.id))
+      .limit(query.limit)
+      .offset((query.page - 1) * query.limit)
+      .all(),
+    total: tx.select({ total: count() }).from(users).where(where).get()?.total ?? 0,
+  }));
 
   return {
     items,
