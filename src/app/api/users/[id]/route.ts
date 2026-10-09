@@ -5,11 +5,11 @@ import { ANALYTICS_CACHE_TAG } from "@/features/analytics/data";
 import { deleteUser, getUser, updateUser } from "@/features/users/data";
 import { EMAIL_TAKEN_MESSAGE, parseUserId, userUpdateSchema } from "@/features/users/schemas";
 import type { User } from "@/features/users/types";
-import { apiError, readJson } from "@/lib/api";
+import { apiError, readJson, withApiErrors } from "@/lib/api";
 
 const userNotFound = () => apiError(404, "NOT_FOUND", "User not found");
 
-export async function GET(_request: NextRequest, ctx: RouteContext<"/api/users/[id]">) {
+export const GET = withApiErrors(async (_request: NextRequest, ctx: RouteContext<"/api/users/[id]">) => {
   const id = parseUserId((await ctx.params).id);
   if (id === null) return userNotFound();
 
@@ -17,9 +17,9 @@ export async function GET(_request: NextRequest, ctx: RouteContext<"/api/users/[
   if (!user) return userNotFound();
 
   return NextResponse.json<User>(user);
-}
+});
 
-export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/users/[id]">) {
+export const PATCH = withApiErrors(async (request: NextRequest, ctx: RouteContext<"/api/users/[id]">) => {
   const id = parseUserId((await ctx.params).id);
   if (id === null) return userNotFound();
 
@@ -39,9 +39,9 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/users/
   }
 
   return NextResponse.json<User>(result.data);
-}
+});
 
-export async function DELETE(_request: NextRequest, ctx: RouteContext<"/api/users/[id]">) {
+export const DELETE = withApiErrors(async (_request: NextRequest, ctx: RouteContext<"/api/users/[id]">) => {
   const id = parseUserId((await ctx.params).id);
   if (id === null) return userNotFound();
 
@@ -49,8 +49,10 @@ export async function DELETE(_request: NextRequest, ctx: RouteContext<"/api/user
   if (!result.ok) return userNotFound();
 
   // The user's transactions were deleted too, so cached analytics are outdated.
-  // updateTag only works in Server Actions; Route Handlers use revalidateTag.
-  revalidateTag(ANALYTICS_CACHE_TAG, "max");
+  // updateTag only works in Server Actions. In a Route Handler, revalidateTag with
+  // { expire: 0 } drops the entry right away (the default "max" profile would
+  // still serve the old numbers once while recomputing in the background).
+  revalidateTag(ANALYTICS_CACHE_TAG, { expire: 0 });
 
   return new Response(null, { status: 204 });
-}
+});
