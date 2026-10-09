@@ -35,6 +35,7 @@ npm run dev                  # http://localhost:3000
 | `npm run db:generate` | Create a migration after changing `src/db/schema.ts` |
 | `npm run db:migrate` | Apply pending migrations |
 | `npm run typecheck` / `npm run lint` | Type check (with generated route types) / ESLint |
+| `npm test` | Unit tests (Vitest) for URL parsing, URL building, periods, LIKE escaping, API errors |
 
 ### Simulating a slow or failing API
 
@@ -104,6 +105,7 @@ Server Components are the default. A component becomes a Client Component only w
 | `UsersPagination`, sort headers | Server / links | Plain `<Link>`s, work before hydration |
 | `UserForm` | **Client** | `useActionState`, avatar preview, toast + navigation |
 | `BackToUsersButton` | **Client** | `router.back()` |
+| `Avatar` | **Client** | `onError` → initials when the image URL is broken |
 | `error.tsx`, `global-error.tsx` | **Client** | React requires error boundaries to be client components |
 
 ---
@@ -117,6 +119,8 @@ The users table state (`?page=2&limit=25&search=john&status=active&sort=revenue&
 - refresh, shared links and the Back button all restore the exact view;
 - **Users → User → Back** returns to the same page, search, filter and sort. With Cache Components, Next.js keeps recently visited pages mounted (React `<Activity>`), so the scroll position is restored too;
 - invalid params never crash a page: every field in the zod schema has `.catch(default)`, so `?page=abc&limit=9999&sort=hack` simply shows page 1 with the defaults.
+
+The "Back to users" button only calls `router.back()` when the previous history entry really is the users table (checked with the Navigation API, which, unlike `history.length`, ignores other websites); otherwise it opens the table. After saving, the form replaces its own history entry, so Back never returns to the form.
 
 One function, `buildUsersHref()`, builds every table URL on both server and client. Any change other than the page resets to page 1. Search uses `router.replace` (no history entry per keystroke); filters, sorting and pages create history entries so Back undoes them.
 
@@ -145,13 +149,17 @@ No manual rollback code is needed. The optimistic layer only exists while the tr
 | Analytics (KPIs, chart) | **Yes**: `"use cache"` + `cacheLife("minutes")` + `cacheTag("analytics")` | Heaviest query (~0.3 s on 100k users) and runs on every Overview visit. A minute of staleness is fine for a dashboard. |
 | Users, user details, transactions | No | An admin must see their own edits immediately, and these queries take milliseconds. |
 
-After a mutation, Server Actions call `revalidatePath("/dashboard", "layout")`, so every dashboard page (table, user page, overview) shows fresh data, and the current page is re-rendered in the same response, with no full reload. Deleting a user also deletes their transactions, so `deleteUserAction` calls `updateTag("analytics")` to drop the cached numbers immediately (the REST `DELETE` uses `revalidateTag`, since `updateTag` only works in Server Actions).
+After a mutation, Server Actions call `revalidatePath("/dashboard", "layout")`, so every dashboard page (table, user page, overview) shows fresh data, and the current page is re-rendered in the same response, with no full reload. Deleting a user also deletes their transactions, so the cached numbers must go right away: `deleteUserAction` calls `updateTag("analytics")`, and the REST `DELETE` calls `revalidateTag("analytics", { expire: 0 })` (`updateTag` only works in Server Actions; the default `"max"` profile would still serve the old numbers once).
 
 Every uncached read in `data.ts` starts with `await connection()`. `better-sqlite3` is synchronous, so without it Next.js could run a query once during prerendering and serve that frozen result.
 
+### Search
+
+Case-insensitive `LIKE` on name and email. User input is escaped (`%`, `_` and `\` match literally, `ESCAPE '\'`), so searching for `%` finds nothing instead of everyone. A search longer than 100 characters is cut, not dropped (dropping would mean "no filter"). `items` and `total` are read in one DB transaction, so "Showing 1–25 of N" always matches the rows.
+
 ### Data model
 
-SQLite via `better-sqlite3` + Drizzle ORM (row types are inferred from the schema). Money is stored in integer cents, dates as ISO strings. Email uniqueness is enforced by a `UNIQUE` constraint, not a check-then-insert (which would race). `revenue_cents` is denormalized on `users` so the table can sort by revenue without aggregating transactions.
+SQLite via `better-sqlite3` + Drizzle ORM (row types are inferred from the schema). Money is stored in integer cents, dates as ISO strings. Email uniqueness is enforced by a `UNIQUE` constraint, not a check-then-insert (which would race). `revenue_cents` is denormalized on `users` so the table can sort by revenue without aggregating transactions. **Limitation:** only the seed writes transactions today; any code that adds or changes transactions must update this column in the same DB transaction (or a SQLite trigger should).
 
 ---
 
@@ -179,9 +187,9 @@ Measured with `npm run db:seed -- --users=100000` (100k users, ~500k transaction
 | Case | How |
 |---|---|
 | Loading | `MOCK_LATENCY_MS=1500`, then open any page or change the period, search, sort or page |
-| Error | `DATABASE_PATH=/tmp/empty.db npm run dev` (DB without tables), then open a user page |
+| Error | `DATABASE_PATH=/tmp/empty.db npm run dev` (DB without tables), then open a user page (UI) or `/api/users` (JSON `500 INTERNAL`) |
 | Empty | Create a user, then open their page ("No transactions yet") |
-| No search results | `/dashboard/users?search=asdfghjkl` → "No users found." + "Clear filters" |
+| No search results | `/dashboard/users?search=asdfghjkl` → "No users found." + "Clear filters"; `?search=%25` (a literal `%`) also finds nothing |
 | Invalid URL params | `/dashboard/users?page=abc&limit=9999&sort=hack&status=weird` |
 | Page out of range | `/dashboard/users?page=999` → "This page doesn't exist" |
 | Unknown user | `/dashboard/users/999999` and `/dashboard/users/abc` → "User not found" |
@@ -193,7 +201,7 @@ Measured with `npm run db:seed -- --users=100000` (100k users, ~500k transaction
 
 ## API
 
-All responses are typed; errors share one shape: `{ error: { code, message, fieldErrors? } }`.
+All responses are typed; errors share one shape: `{ error: { code, message, fieldErrors? } }`, including unexpected failures (`500` with code `INTERNAL`, via `withApiErrors`; details are logged on the server, not sent to the client).
 
 | Method | Path | Notes |
 |---|---|---|
@@ -211,5 +219,17 @@ All responses are typed; errors share one shape: `{ error: { code, message, fiel
 
 - **Authentication**: the current admin and project are constants (`src/lib/config.ts`).
 - **Settings page**: placeholder. **Transactions page**: the 50 most recent transactions, without pagination (the task only requires the sidebar item).
-- **Automated tests**, **dark mode**, **i18n**.
+- **Component / end-to-end tests**: only pure functions are unit-tested. **Dark mode**, **i18n**.
 - Times are shown in UTC: Server Components don't know the viewer's time zone.
+
+## Known trade-offs
+
+Conscious decisions that a reviewer may question, and what the alternative would cost:
+
+| Trade-off | Why it's like this | Alternative |
+|---|---|---|
+| `/dashboard/users/abc` returns HTTP **200** with the "User not found" UI | `loading.tsx` starts streaming before the page knows the user is missing, and the status code is already sent. Next adds `noindex`; for an internal admin panel the UI matters more than the status. | Remove `loading.tsx` from `[id]`: a real 404, but a blank screen instead of a skeleton while the user loads. |
+| `PeriodSwitcher` lives in the shared header and hides itself outside Overview | The task puts the period switcher in the header. | A parallel route slot (`@headerActions`) where each page renders its own header controls: cleaner, but more routing concepts for a single control. |
+| The REST API replaces invalid query params with defaults (`limit=9999` → 25) instead of returning 400 | The same schema serves the UI, where a broken URL must never crash the page. | A strict schema for `/api/*` only, returning 400 with details. |
+| After a delete, analytics can very rarely stay stale for up to a minute | If the delete lands while Next is already recomputing an expired analytics entry in the background (a ~0.3 s window once a minute), that recompute read the DB before the delete and stores the old numbers after the cache was cleared. It heals on the next recompute, which is the same "up to a minute old" guarantee analytics already has. Reproduced and measured. | Don't cache analytics, or use a cache with versioned keys. Both cost more than a minute of staleness on a dashboard. |
+| Optimistic delete: "Showing 1–25 of N" updates after the server responds, not instantly; confirmation uses `window.confirm` | The total lives in the server-rendered pagination; `confirm` is accessible and needs no extra code. | Lift the total into the client table; a custom confirmation dialog. |

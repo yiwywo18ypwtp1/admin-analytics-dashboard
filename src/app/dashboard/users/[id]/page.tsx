@@ -30,6 +30,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function UserPage({ params }: Props) {
   const user = await findUser(params);
   // "/users/abc" and "/users/999999" both end up here and render not-found.tsx.
+  // Known trade-off (README → Known trade-offs): the HTTP status is 200, not 404.
+  // loading.tsx has already streamed the skeleton, and the status code went out
+  // with it. Removing loading.tsx would give a real 404 but a blank screen while
+  // the user loads; for a noindex admin panel the visible UI matters more.
   if (!user) notFound();
 
   return (

@@ -24,7 +24,11 @@ export function PeriodSwitcher() {
   // until the user applies a range.
   const [isCustomOpen, setIsCustomOpen] = useState(false);
 
-  // It lives in the shared header but only means something on the Overview page.
+  // It lives in the shared header (the task puts the period switcher there) but
+  // only means something on the Overview page.
+  // Known trade-off (README → Known trade-offs): the header knows about one page's
+  // feature. A parallel route slot (@headerActions) would decouple them, but adds
+  // routing concepts for a single control. Worth it once a second page needs one.
   if (pathname !== "/dashboard") return null;
 
   // Same parser as the server, so both always agree on the period (including fallbacks).

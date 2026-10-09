@@ -20,6 +20,9 @@ export const users = sqliteTable(
     avatarUrl: text("avatar_url"),
     // Denormalized sum of succeeded transactions. Sorting the users table by
     // SUM(...) over transactions would be slow on large data sets.
+    // KNOWN LIMITATION: only the seed writes transactions today, so this never
+    // drifts. Any future code that inserts/updates transactions must update this
+    // column in the same DB transaction (or a SQLite trigger should do it).
     revenueCents: integer("revenue_cents").notNull().default(0),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),

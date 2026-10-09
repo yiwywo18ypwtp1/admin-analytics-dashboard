@@ -5,6 +5,8 @@ import { UserStatsSkeleton } from "@/features/users/components/user-stats";
 import { RecentTransactionsSkeleton } from "@/features/transactions/components/recent-transactions";
 
 // Shown while the page loads the user (needed before anything else, to decide on notFound()).
+// Side effect: streaming starts before notFound() can run, so an unknown user gets
+// HTTP 200 instead of 404. Deliberate, see the comment in page.tsx.
 export default function UserLoading() {
   return (
     <>

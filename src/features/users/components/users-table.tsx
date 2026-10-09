@@ -29,6 +29,11 @@ export function UsersTable({ users, query }: UsersTableProps) {
     current.filter((user) => user.id !== deletedId),
   );
 
+  // Known trade-offs (README → Known trade-offs):
+  // - Only the row is optimistic. "Showing 1–25 of N" lives in the server-rendered
+  //   pagination and updates when the server responds (~one roundtrip later).
+  // - window.confirm is used on purpose: built-in, keyboard and screen-reader
+  //   accessible, no extra code. A custom dialog would be the next step.
   function handleDelete(user: User) {
     if (!window.confirm(`Delete ${user.name}? This can't be undone.`)) return;
 
