@@ -1,4 +1,7 @@
+"use client";
+
 import Image from "next/image";
+import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { OPTIMIZED_IMAGE_HOSTS } from "@/lib/config";
 import { getInitials } from "@/lib/format";
@@ -15,11 +18,16 @@ function isOptimizedHost(src: string): boolean {
   return URL.canParse(src) && OPTIMIZED_IMAGE_HOSTS.includes(new URL(src).hostname);
 }
 
-// No hooks, so it works in both Server and Client Components (users table is a Client Component).
+// Client Component only because of onError: if the image URL is broken (404,
+// deleted image, not an image), fall back to initials instead of a broken-image icon.
+// Event handlers like onError can't run in Server Components.
 export function Avatar({ name, src, size = 32, className }: AvatarProps) {
+  // Remembers WHICH url failed, not just "failed": when `src` changes (e.g. the
+  // avatar preview in the form), the new url gets a fresh try automatically.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const style = { width: size, height: size };
 
-  if (!src) {
+  if (!src || src === failedSrc) {
     return (
       <span
         aria-hidden
@@ -45,6 +53,7 @@ export function Avatar({ name, src, size = 32, className }: AvatarProps) {
       // next/image only optimizes hosts listed in next.config.ts. A user can save any
       // https URL as an avatar, so unknown hosts are loaded as-is instead of failing.
       unoptimized={!isOptimizedHost(src)}
+      onError={() => setFailedSrc(src)}
       style={style}
       className={cn("shrink-0 rounded-full bg-zinc-200 object-cover", className)}
     />
